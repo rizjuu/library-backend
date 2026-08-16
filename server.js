@@ -5,13 +5,24 @@ require("dotenv").config();
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    process.env.FRONTEND_URL
+  ]
+}));
 app.use(express.json());
 
 app.use("/api/books", require("./routes/books"));
+
 app.use(
   "/api/transactions",
   require("./routes/transactions")
+);
+
+app.use(
+  "/api/auth",
+  require("./routes/auth")
 );
 
 mongoose
