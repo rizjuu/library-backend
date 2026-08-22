@@ -20,6 +20,11 @@ app.use(
   require("./routes/auth")
 );
 
+app.use(
+  "/api/external-books",
+  require("./routes/externalBooks")
+);
+
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
