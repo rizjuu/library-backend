@@ -131,18 +131,28 @@ router.post("/patron-request-link", async (req, res) => {
       { expiresIn: "15m" }
     );
 
-    const frontendBase = process.env.FRONTEND_URL || "http://localhost:5173";
+    // Dynamically derive frontend URL from request origin/referer or FRONTEND_URL env var
+    let requestOrigin = req.headers.origin;
+    if (!requestOrigin && req.get("referer")) {
+      try {
+        requestOrigin = new URL(req.get("referer")).origin;
+      } catch (e) {
+        requestOrigin = null;
+      }
+    }
+
+    const frontendBase = (requestOrigin || process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
     const magicLink = `${frontendBase}/verify-patron?token=${magicToken}`;
 
-    // Send email with magic link
-    const emailResult = await sendMagicLinkEmail(patron.email, magicLink);
+    // Send email with magic link directly to patron inbox
+    await sendMagicLinkEmail(patron.email, magicLink);
 
     res.json({
-      message: `Authentication link sent to ${patron.email}. Please check your email inbox to log in.`,
-      email: patron.email,
-      magicLink: magicLink, // Included for easy local dev testing
-      previewUrl: emailResult.previewUrl
+      message: `An email with a login link has been sent to ${patron.email}. Please check your email inbox to log in.`,
+      email: patron.email
     });
+
+
   } catch (error) {
     console.error("PATRON MAGIC LINK REQUEST ERROR:", error);
     res.status(500).json({

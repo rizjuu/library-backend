@@ -1,34 +1,28 @@
 const nodemailer = require("nodemailer");
 
-async function createTransporter() {
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: parseInt(process.env.SMTP_PORT || "587"),
-      secure: process.env.SMTP_PORT === "465",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    });
-  }
+function createTransporter() {
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.GMAIL_PASS;
 
-  // Create ethereal test account if no custom credentials supplied
-  try {
-    const testAccount = await nodemailer.createTestAccount();
-    return nodemailer.createTransport({
-      host: "smtp.ethereal.email",
-      port: 587,
-      secure: false,
-      auth: {
-        user: testAccount.user,
-        pass: testAccount.pass
-      }
-    });
-  } catch (err) {
-    console.warn("Could not create test email account, fallback to console output:", err.message);
+  if (!user || !pass) {
     return null;
   }
+
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = parseInt(process.env.SMTP_PORT || "587");
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 5000,
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
 }
 
 async function sendMagicLinkEmail(recipientEmail, magicLink) {
@@ -72,26 +66,29 @@ async function sendMagicLinkEmail(recipientEmail, magicLink) {
     `
   };
 
-  try {
-    const transporter = await createTransporter();
-    if (transporter) {
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`[Email] Magic link email sent to ${recipientEmail}`);
-      const previewUrl = nodemailer.getTestMessageUrl(info);
-      if (previewUrl) {
-        console.log(`[Email Preview URL]: ${previewUrl}`);
-      }
-      return { success: true, previewUrl: previewUrl || null };
-    }
-  } catch (error) {
-    console.error("[Email Error]:", error);
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.warn(`[Email] No SMTP credentials configured. Skipping email send for ${recipientEmail}.`);
+    console.log(`[Magic Link URL]: ${magicLink}`);
+    return { success: true, sent: false, reason: "NO_SMTP" };
   }
 
-  // Fallback log
-  console.log(`\n================ MAGIC LINK FOR ${recipientEmail} ================`);
-  console.log(magicLink);
-  console.log(`=================================================================\n`);
-  return { success: true, fallback: true };
+  try {
+    // Send email with 5s max timeout to prevent hanging on serverless platforms like Vercel/Render
+    const sendPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Email dispatch timed out after 5s")), 5000)
+    );
+
+    const info = await Promise.race([sendPromise, timeoutPromise]);
+    console.log(`[Email] Magic link email successfully sent to ${recipientEmail}. Message ID: ${info.messageId}`);
+    return { success: true, sent: true };
+  } catch (error) {
+    console.error("[Email Error]:", error.message);
+    console.log(`[Magic Link Fallback URL]: ${magicLink}`);
+    return { success: true, sent: false, error: error.message };
+  }
 }
 
 module.exports = { sendMagicLinkEmail };
