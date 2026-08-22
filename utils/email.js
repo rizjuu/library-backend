@@ -32,18 +32,23 @@ function createTransporter() {
   });
 }
 
-async function sendMagicLinkEmail(recipientEmail, magicLink) {
+async function sendSignInNotificationEmail(recipientEmail, userName = "Patron") {
   const user = (process.env.SMTP_USER || process.env.GMAIL_USER || "").trim();
   
-  // Use authenticated SMTP user for From address to pass Gmail SPF/DKIM verification
   const fromAddress = user
     ? `"Misamis Oriental Public Library" <${user}>`
     : (process.env.SMTP_FROM || '"Misamis Oriental Public Library" <noreply@mopl.gov.ph>');
 
+  const now = new Date().toLocaleString("en-US", {
+    timeZone: "Asia/Manila",
+    dateStyle: "full",
+    timeStyle: "short"
+  });
+
   const mailOptions = {
     from: fromAddress,
     to: recipientEmail,
-    subject: "Sign in to Misamis Oriental Public Library",
+    subject: "Signed in to Misamis Oriental Provincial Capitol Public Library",
     html: `
       <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #ffffff;">
         <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #3b82f6;">
@@ -52,25 +57,16 @@ async function sendMagicLinkEmail(recipientEmail, magicLink) {
         </div>
         
         <div style="padding: 30px 10px; color: #334155;">
-          <h3 style="color: #0f172a; margin-top: 0;">Sign-In Request</h3>
-          <p>Hello,</p>
-          <p>We received a request to log in to your Patron account associated with <strong>${recipientEmail}</strong>.</p>
-          <p>Click the button below to complete your authentication and access your Patron Dashboard:</p>
+          <h3 style="color: #0f172a; margin-top: 0;">Sign-In Confirmation</h3>
+          <p>Hello <strong>${userName}</strong>,</p>
+          <p>You have successfully signed in to the <strong>Misamis Oriental Provincial Capitol Public Library System</strong> on <strong>${now}</strong>.</p>
+          <p>Your account (<strong>${recipientEmail}</strong>) is active. You can now explore the digital catalog, view available titles, and check your loan records.</p>
           
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${magicLink}" style="background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">
-              Sign in to Patron Portal
-            </a>
+          <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 14px 18px; margin: 24px 0; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13.5px; color: #475569;">
+              ℹ️ <strong>Security Tip:</strong> If you did not initiate this sign-in, please notify library staff or contact administration immediately.
+            </p>
           </div>
-          
-          <p style="font-size: 13px; color: #64748b;">
-            If the button doesn't work, copy and paste this link into your browser:<br/>
-            <a href="${magicLink}" style="color: #2563eb; word-break: break-all;">${magicLink}</a>
-          </p>
-          
-          <p style="font-size: 13px; color: #94a3b8; margin-top: 25px;">
-            This link will expire in 15 minutes. If you did not request this login, you can safely ignore this email.
-          </p>
         </div>
         
         <div style="border-top: 1px solid #e2e8f0; padding-top: 15px; text-align: center; font-size: 12px; color: #94a3b8;">
@@ -83,14 +79,13 @@ async function sendMagicLinkEmail(recipientEmail, magicLink) {
   const transporter = createTransporter();
 
   if (!transporter) {
-    console.warn(`[Email] No SMTP credentials configured. Skipping email send for ${recipientEmail}.`);
-    console.log(`[Magic Link URL]: ${magicLink}`);
+    console.warn(`[Email] No SMTP credentials configured. Skipping sign-in notification for ${recipientEmail}.`);
     return { success: false, reason: "NO_SMTP" };
   }
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`[Email] Magic link email successfully delivered to ${recipientEmail}. Message ID: ${info.messageId}`);
+    console.log(`[Email] Sign-in notification successfully delivered to ${recipientEmail}. Message ID: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error("[Email Dispatch Error]:", error.message);
@@ -98,4 +93,4 @@ async function sendMagicLinkEmail(recipientEmail, magicLink) {
   }
 }
 
-module.exports = { sendMagicLinkEmail };
+module.exports = { sendSignInNotificationEmail };

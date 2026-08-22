@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
-const { sendMagicLinkEmail } = require("../utils/email");
+const { sendSignInNotificationEmail } = require("../utils/email");
 const { protect } = require("../middleware/auth");
 
 const router = express.Router();
@@ -88,9 +88,9 @@ router.post("/login", async (req, res) => {
 });
 
 // ================================
-// PATRON MAGIC LINK REQUEST (EMAIL AUTH)
+// PATRON DIRECT LOGIN (EMAIL AUTH + NOTIFICATION)
 // ================================
-router.post("/patron-request-link", async (req, res) => {
+router.post("/patron-login", async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -101,165 +101,27 @@ router.post("/patron-request-link", async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-
-    // Find patron or automatically save/create new patron record in database
-    let patron = await User.findOne({
-      email: cleanEmail,
-      role: "patron"
-    });
-
-    if (!patron) {
-      const defaultName = cleanEmail.split("@")[0];
-      patron = await User.create({
-        email: cleanEmail,
-        role: "patron",
-        name: defaultName.charAt(0).toUpperCase() + defaultName.slice(1)
-      });
-      console.log(`[DB] Created new patron record for email: ${cleanEmail}`);
-    } else {
-      console.log(`[DB] Found existing patron record for email: ${cleanEmail}`);
-    }
-
-    // Generate short-lived token for magic link (expires in 15 minutes)
-    const magicToken = jwt.sign(
-      {
-        id: patron._id,
-        email: patron.email,
-        type: "magic_link"
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" }
-    );
-
-    // Dynamically derive frontend URL from request origin/referer or FRONTEND_URL env var
-    let requestOrigin = req.headers.origin;
-    if (!requestOrigin && req.get("referer")) {
-      try {
-        requestOrigin = new URL(req.get("referer")).origin;
-      } catch (e) {
-        requestOrigin = null;
-      }
-    }
-
-    const frontendBase = (requestOrigin || process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
-    const magicLink = `${frontendBase}/verify-patron?token=${magicToken}`;
-
-    // Send email with magic link directly to patron inbox
-    await sendMagicLinkEmail(patron.email, magicLink);
-
-    res.json({
-      message: `An email with a login link has been sent to ${patron.email}. Please check your email inbox to log in.`,
-      email: patron.email
-    });
-
-
-  } catch (error) {
-    console.error("PATRON MAGIC LINK REQUEST ERROR:", error);
-    res.status(500).json({
-      message: "Failed to process patron login link request",
-      error: error.message
-    });
-  }
-});
-
-// ================================
-// PATRON MAGIC LINK VERIFICATION
-// ================================
-router.get("/verify-patron-token", async (req, res) => {
-  try {
-    const { token } = req.query;
-
-    if (!token) {
-      return res.status(400).json({
-        message: "Authentication token is missing"
-      });
-    }
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(401).json({
-        message: "Authentication link is invalid or has expired. Please request a new link."
-      });
-    }
-
-    if (decoded.type !== "magic_link") {
-      return res.status(400).json({
-        message: "Invalid token type"
-      });
-    }
-
-    let patron = await User.findById(decoded.id);
-    if (!patron) {
-      patron = await User.findOne({ email: decoded.email, role: "patron" });
-    }
-
-    if (!patron) {
-      // Create if missing
-      patron = await User.create({
-        email: decoded.email,
-        role: "patron",
-        name: decoded.email.split("@")[0]
-      });
-    }
-
-    // Generate long-lived session token
-    const sessionToken = jwt.sign(
-      {
-        id: patron._id,
-        email: patron.email,
-        role: "patron",
-        name: patron.name
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    res.json({
-      message: "Authentication successful",
-      token: sessionToken,
-      user: {
-        id: patron._id,
-        email: patron.email,
-        role: patron.role,
-        name: patron.name
-      }
-    });
-  } catch (error) {
-    console.error("PATRON VERIFY ERROR:", error);
-    res.status(500).json({
-      message: "Server error verifying magic link token",
-      error: error.message
-    });
-  }
-});
-
-// ================================
-// PATRON DIRECT LOGIN (EXISTING ROUTE RETAILED)
-// ================================
-router.post("/patron-login", async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        message: "Email is required"
-      });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
     let user = await User.findOne({
       email: cleanEmail,
       role: "patron"
     });
 
     if (!user) {
-      // Save patron email to database automatically
+      // Automatically save new patron email to MongoDB database for future logins
+      const defaultName = cleanEmail.split("@")[0];
       user = await User.create({
         email: cleanEmail,
         role: "patron",
-        name: cleanEmail.split("@")[0]
+        name: defaultName.charAt(0).toUpperCase() + defaultName.slice(1)
+      });
+      console.log(`[DB] Created and saved new patron record for email: ${cleanEmail}`);
+    } else {
+      console.log(`[DB] Found existing patron in MongoDB: ${cleanEmail}`);
+    }
+
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({
+        message: "JWT_SECRET is not configured"
       });
     }
 
@@ -276,6 +138,11 @@ router.post("/patron-login", async (req, res) => {
       }
     );
 
+    // Send sign-in notification email asynchronously
+    sendSignInNotificationEmail(user.email, user.name).catch((err) => {
+      console.error("[Email Notification Warning]:", err.message);
+    });
+
     res.json({
       message: "Login successful",
       token,
@@ -287,9 +154,10 @@ router.post("/patron-login", async (req, res) => {
       }
     });
   } catch (error) {
-    console.error(error);
+    console.error("PATRON LOGIN ERROR:", error);
     res.status(500).json({
-      message: "Server error"
+      message: "Server error during patron login",
+      error: error.message
     });
   }
 });
