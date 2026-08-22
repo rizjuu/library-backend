@@ -1,24 +1,31 @@
 const nodemailer = require("nodemailer");
 
 function createTransporter() {
-  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.GMAIL_PASS;
+  const user = (process.env.SMTP_USER || process.env.GMAIL_USER || "").trim();
+  const rawPass = process.env.SMTP_PASS || process.env.GMAIL_PASS || "";
+  const pass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail App Password
 
   if (!user || !pass) {
+    console.warn("[Email Transporter Warning]: SMTP_USER or SMTP_PASS missing in environment variables.");
     return null;
   }
 
-  const host = process.env.SMTP_HOST || "smtp.gmail.com";
-  const port = parseInt(process.env.SMTP_PORT || "587");
+  const host = (process.env.SMTP_HOST || "").toLowerCase();
+  const isGmail = host.includes("gmail") || user.endsWith("@gmail.com");
 
+  if (isGmail) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: { user, pass }
+    });
+  }
+
+  const port = parseInt(process.env.SMTP_PORT || "587");
   return nodemailer.createTransport({
-    host,
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
     port,
     secure: port === 465,
     auth: { user, pass },
-    connectionTimeout: 5000,
-    greetingTimeout: 5000,
-    socketTimeout: 5000,
     tls: {
       rejectUnauthorized: false
     }
@@ -26,8 +33,15 @@ function createTransporter() {
 }
 
 async function sendMagicLinkEmail(recipientEmail, magicLink) {
+  const user = (process.env.SMTP_USER || process.env.GMAIL_USER || "").trim();
+  
+  // Use authenticated SMTP user for From address to pass Gmail SPF/DKIM verification
+  const fromAddress = user
+    ? `"Misamis Oriental Public Library" <${user}>`
+    : (process.env.SMTP_FROM || '"Misamis Oriental Public Library" <noreply@mopl.gov.ph>');
+
   const mailOptions = {
-    from: process.env.SMTP_FROM || '"Misamis Oriental Public Library" <noreply@mopl.gov.ph>',
+    from: fromAddress,
     to: recipientEmail,
     subject: "Sign in to Misamis Oriental Public Library",
     html: `
@@ -71,23 +85,16 @@ async function sendMagicLinkEmail(recipientEmail, magicLink) {
   if (!transporter) {
     console.warn(`[Email] No SMTP credentials configured. Skipping email send for ${recipientEmail}.`);
     console.log(`[Magic Link URL]: ${magicLink}`);
-    return { success: true, sent: false, reason: "NO_SMTP" };
+    return { success: false, reason: "NO_SMTP" };
   }
 
   try {
-    // Send email with 5s max timeout to prevent hanging on serverless platforms like Vercel/Render
-    const sendPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Email dispatch timed out after 5s")), 5000)
-    );
-
-    const info = await Promise.race([sendPromise, timeoutPromise]);
-    console.log(`[Email] Magic link email successfully sent to ${recipientEmail}. Message ID: ${info.messageId}`);
-    return { success: true, sent: true };
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[Email] Magic link email successfully delivered to ${recipientEmail}. Message ID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error("[Email Error]:", error.message);
-    console.log(`[Magic Link Fallback URL]: ${magicLink}`);
-    return { success: true, sent: false, error: error.message };
+    console.error("[Email Dispatch Error]:", error.message);
+    return { success: false, error: error.message };
   }
 }
 
