@@ -20,6 +20,16 @@ const userSchema = new mongoose.Schema(
       type: String
     },
 
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+
+    avatar: {
+      type: String
+    },
+
     role: {
       type: String,
       enum: ["admin", "staff", "patron"],

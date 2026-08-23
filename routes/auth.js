@@ -1,11 +1,13 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { OAuth2Client } = require("google-auth-library");
 const User = require("../models/User");
 const { sendSignInNotificationEmail } = require("../utils/email");
 const { protect } = require("../middleware/auth");
 
 const router = express.Router();
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 router.get("/test", (req, res) => {
   res.json({
@@ -82,6 +84,105 @@ router.post("/login", async (req, res) => {
     console.error("LOGIN ERROR:", error);
     res.status(500).json({
       message: "Server error",
+      error: error.message
+    });
+  }
+});
+
+// ================================
+// PATRON GOOGLE OAUTH LOGIN
+// ================================
+router.post("/google-login", async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      return res.status(400).json({
+        message: "Google credential is required"
+      });
+    }
+
+    // Verify the Google ID token
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Could not retrieve email from Google account"
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Find existing user by googleId or email
+    let user = await User.findOne({
+      $or: [
+        { googleId: googleId },
+        { email: cleanEmail, role: "patron" }
+      ]
+    });
+
+    if (user) {
+      // Update googleId and avatar if not already set
+      if (!user.googleId) user.googleId = googleId;
+      if (picture && !user.avatar) user.avatar = picture;
+      if (name && user.name === cleanEmail.split("@")[0]) user.name = name;
+      await user.save();
+      console.log(`[Google Auth] Found existing patron: ${cleanEmail}`);
+    } else {
+      // Create new patron
+      user = await User.create({
+        email: cleanEmail,
+        googleId: googleId,
+        avatar: picture || "",
+        role: "patron",
+        name: name || cleanEmail.split("@")[0]
+      });
+      console.log(`[Google Auth] Created new patron: ${cleanEmail}`);
+    }
+
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({
+        message: "JWT_SECRET is not configured"
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        role: "patron",
+        name: user.name
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    // Send sign-in notification email asynchronously
+    sendSignInNotificationEmail(user.email, user.name).catch((err) => {
+      console.error("[Email Notification Warning]:", err.message);
+    });
+
+    res.json({
+      message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        name: user.name,
+        avatar: user.avatar
+      }
+    });
+  } catch (error) {
+    console.error("GOOGLE LOGIN ERROR:", error);
+    res.status(500).json({
+      message: "Google authentication failed",
       error: error.message
     });
   }
