@@ -1,5 +1,6 @@
 const express = require("express");
 const Announcement = require("../models/Announcement");
+const { protect, authorize } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ router.get("/", async (req, res) => {
 });
 
 // POST create new announcement
-router.post("/", async (req, res) => {
+router.post("/", protect, authorize("admin"), async (req, res) => {
   try {
     const { title, content, priority, author, date } = req.body;
     if (!title || !content) {
@@ -38,7 +39,7 @@ router.post("/", async (req, res) => {
 });
 
 // DELETE announcement
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", protect, authorize("admin"), async (req, res) => {
   try {
     const announcement = await Announcement.findByIdAndDelete(req.params.id);
     if (!announcement) {
