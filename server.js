@@ -11,6 +11,7 @@ app.use(express.json());
 app.use("/api/books", require("./routes/books"));
 app.use("/api/transactions", require("./routes/transactions"));
 app.use("/api/auth", require("./routes/auth"));
+app.use("/api/users", require("./routes/users"));
 app.use("/api/external-books", require("./routes/externalBooks"));
 app.use("/api/announcements", require("./routes/announcements"));
 app.use("/api/dashboard", require("./routes/dashboard"));

@@ -40,6 +40,13 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    if (user.status === "disabled") {
+      return res.status(403).json({
+        message: "Your account has been disabled by administration. Please contact the library."
+      });
+    }
+
+
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
       return res.status(401).json({
@@ -128,6 +135,11 @@ router.post("/google-login", async (req, res) => {
     });
 
     if (user) {
+      if (user.status === "disabled") {
+        return res.status(403).json({
+          message: "Your patron account has been disabled by administration. Please contact the library."
+        });
+      }
       // Update googleId and avatar if not already set
       if (!user.googleId) user.googleId = googleId;
       if (picture && !user.avatar) user.avatar = picture;
@@ -135,6 +147,7 @@ router.post("/google-login", async (req, res) => {
       await user.save();
       console.log(`[Google Auth] Found existing patron: ${cleanEmail}`);
     } else {
+
       // Create new patron
       user = await User.create({
         email: cleanEmail,
@@ -217,8 +230,14 @@ router.post("/patron-login", async (req, res) => {
       });
       console.log(`[DB] Created and saved new patron record for email: ${cleanEmail}`);
     } else {
+      if (user.status === "disabled") {
+        return res.status(403).json({
+          message: "Your patron account has been disabled by administration. Please contact the library."
+        });
+      }
       console.log(`[DB] Found existing patron in MongoDB: ${cleanEmail}`);
     }
+
 
     if (!process.env.JWT_SECRET) {
       return res.status(500).json({

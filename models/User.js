@@ -39,6 +39,18 @@ const userSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true
+    },
+
+    phone: {
+      type: String,
+      trim: true,
+      default: ""
+    },
+
+    status: {
+      type: String,
+      enum: ["active", "disabled"],
+      default: "active"
     }
   },
   {

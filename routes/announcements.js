@@ -1,10 +1,9 @@
 const express = require("express");
 const Announcement = require("../models/Announcement");
-const { protect, authorize } = require("../middleware/auth");
 
 const router = express.Router();
 
-// GET all active announcements (Open/Read-Only for Admin, Staff, Patron)
+// GET all active announcements
 router.get("/", async (req, res) => {
   try {
     const announcements = await Announcement.find({ active: true }).sort({ createdAt: -1 });
@@ -15,8 +14,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST create new announcement (ADMIN ONLY)
-router.post("/", protect, authorize("admin"), async (req, res) => {
+// POST create new announcement
+router.post("/", async (req, res) => {
   try {
     const { title, content, priority, author, date } = req.body;
     if (!title || !content) {
@@ -27,7 +26,7 @@ router.post("/", protect, authorize("admin"), async (req, res) => {
       title: title.trim(),
       content: content.trim(),
       priority: priority || "normal",
-      author: author || req.user?.name || "Library Admin",
+      author: author || "Library Admin",
       date: date || new Date().toISOString().split("T")[0]
     });
 
@@ -38,8 +37,8 @@ router.post("/", protect, authorize("admin"), async (req, res) => {
   }
 });
 
-// DELETE announcement (ADMIN ONLY)
-router.delete("/:id", protect, authorize("admin"), async (req, res) => {
+// DELETE announcement
+router.delete("/:id", async (req, res) => {
   try {
     const announcement = await Announcement.findByIdAndDelete(req.params.id);
     if (!announcement) {
