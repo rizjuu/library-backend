@@ -16,6 +16,13 @@ const bookSchema = new mongoose.Schema(
       trim: true
     },
 
+    accessionNumber: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true
+    },
+
     title: {
       type: String,
       required: true,
@@ -107,6 +114,22 @@ const bookSchema = new mongoose.Schema(
     borrowable: {
       type: Boolean,
       default: true
+    },
+
+    archived: {
+      type: Boolean,
+      default: false
+    },
+
+    archivedAt: {
+      type: Date,
+      default: null
+    },
+
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null
     }
   },
   {

@@ -22,9 +22,9 @@ router.get("/stats", async (req, res) => {
       recentTransactions,
       announcements
     ] = await Promise.all([
-      Book.countDocuments(),
-      Book.countDocuments({ available: { $ne: false } }),
-      Book.countDocuments({ available: false }),
+      Book.countDocuments({ archived: { $ne: true } }),
+      Book.countDocuments({ archived: { $ne: true }, available: { $ne: false } }),
+      Book.countDocuments({ archived: { $ne: true }, available: false }),
       Transaction.countDocuments({ returned: false, dueDate: { $lt: now } }),
       User.countDocuments(),
       User.countDocuments({ role: "patron" }),

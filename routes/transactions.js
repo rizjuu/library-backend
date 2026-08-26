@@ -22,7 +22,7 @@ router.post("/borrow", async (req, res) => {
   try {
     const { barcode, borrowerName, borrowerEmail, dueDate } = req.body;
 
-    const book = await Book.findOne({ barcode });
+    const book = await Book.findOne({ barcode, archived: { $ne: true } });
 
     if (!book) {
       return res.status(404).json({ message: "Book not found with provided barcode" });

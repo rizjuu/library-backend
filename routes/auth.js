@@ -293,11 +293,59 @@ router.get("/me", protect, async (req, res) => {
         username: req.user.username,
         email: req.user.email,
         role: req.user.role,
-        name: req.user.name
+        name: req.user.name,
+        phone: req.user.phone,
+        avatar: req.user.avatar,
+        status: req.user.status
       }
     });
   } catch (error) {
     res.status(500).json({ message: "Error fetching user profile" });
+  }
+});
+
+// ================================
+// UPDATE CURRENT USER PROFILE
+// ================================
+router.patch("/me", protect, async (req, res) => {
+  try {
+    const { name, email, phone } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: "Name is required" });
+    }
+    if (email !== undefined && (!email.trim() || !email.includes("@"))) {
+      return res.status(400).json({ message: "A valid email address is required" });
+    }
+
+    const user = req.user;
+    const cleanEmail = email === undefined ? user.email : email.trim().toLowerCase();
+    if (cleanEmail && cleanEmail !== user.email) {
+      const existingUser = await User.findOne({ email: cleanEmail, _id: { $ne: user._id } });
+      if (existingUser) return res.status(409).json({ message: "That email address is already in use" });
+    }
+
+    user.name = name.trim();
+    user.email = cleanEmail;
+    if (phone !== undefined) user.phone = phone.trim();
+    await user.save();
+
+    res.json({
+      message: "Profile updated successfully",
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        name: user.name,
+        phone: user.phone,
+        avatar: user.avatar,
+        status: user.status
+      }
+    });
+  } catch (error) {
+    console.error("Error updating current user profile:", error);
+    res.status(500).json({ message: "Failed to update profile" });
   }
 });
 
