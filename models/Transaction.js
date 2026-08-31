@@ -7,6 +7,11 @@ const transactionSchema = new mongoose.Schema(
       ref: "Book",
       required: true
     },
+    borrowerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null
+    },
     borrowerName: {
       type: String,
       required: true

@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const Book = require("../models/Book");
+const { protect, authorize } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -11,9 +12,9 @@ const USER_AGENT =
   "Library Management System/1.0 (jeowenn@gmail.com)";
 
 // ==========================================
-// IMPORT BOOK TO MONGODB (Maps all 10 fields)
+// IMPORT BOOK TO MONGODB (Maps all 10 fields) - staff/admin only
 // ==========================================
-router.post("/import", async (req, res) => {
+router.post("/import", protect, authorize("admin", "staff"), async (req, res) => {
   try {
     const {
       title,

@@ -6,10 +6,10 @@ const router = express.Router();
 
 const barcodeRoles = authorize("admin", "staff");
 
-const buildBarcodeItems = (startNumber, count, prefix) => Array.from({ length: count }, (_, index) => {
+const buildBarcodeItems = (startNumber, count) => Array.from({ length: count }, (_, index) => {
   const sequence = String(startNumber + index).padStart(6, "0");
   return {
-    accessionNumber: `${prefix}-${sequence}`,
+    accessionNumber: `ACC-${sequence}`,
     barcode: `LIB-${sequence}`
   };
 });
@@ -18,7 +18,6 @@ const buildBarcodeItems = (startNumber, count, prefix) => Array.from({ length: c
 router.post("/barcodes/generate", protect, barcodeRoles, async (req, res) => {
   try {
     const count = Math.min(Math.max(Number(req.body.count) || 1, 1), 100);
-    const prefix = String(req.body.prefix || "ACC").trim().toUpperCase().replace(/[^A-Z0-9-]/g, "") || "ACC";
     const existingBooks = await Book.find({}, "accessionNumber barcode").lean();
     const usedAccessions = new Set(existingBooks.map((book) => book.accessionNumber).filter(Boolean));
     const usedBarcodes = new Set(existingBooks.map((book) => book.barcode).filter(Boolean));
@@ -29,7 +28,7 @@ router.post("/barcodes/generate", protect, barcodeRoles, async (req, res) => {
     const generated = [];
 
     while (generated.length < count) {
-      const item = buildBarcodeItems(sequence, 1, prefix)[0];
+      const item = buildBarcodeItems(sequence, 1)[0];
       sequence += 1;
       if (!usedAccessions.has(item.accessionNumber) && !usedBarcodes.has(item.barcode)) {
         generated.push(item);
@@ -56,8 +55,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST add new book (All 10 fields supported)
-router.post("/", async (req, res) => {
+// POST add new book (All 10 fields supported) - staff/admin only
+router.post("/", protect, authorize("admin", "staff"), async (req, res) => {
   try {
     const {
       isbn,
@@ -103,6 +102,63 @@ router.post("/", async (req, res) => {
   } catch (error) {
     console.error("Error creating book:", error);
     res.status(500).json({ message: "Failed to add book", error: error.message });
+  }
+});
+
+// PUT update an existing book - staff/admin only
+router.put("/:id", protect, authorize("admin", "staff"), async (req, res) => {
+  try {
+    const {
+      isbn,
+      title,
+      author,
+      authors,
+      category,
+      publisher,
+      publicationYear,
+      shelf,
+      status,
+      condition,
+      copies,
+      borrowable
+    } = req.body;
+
+    const book = await Book.findOne({ _id: req.params.id, archived: { $ne: true } });
+    if (!book) {
+      return res.status(404).json({ message: "Book not found" });
+    }
+
+    if (title !== undefined) {
+      if (!String(title).trim()) {
+        return res.status(400).json({ message: "Title cannot be empty" });
+      }
+      book.title = String(title).trim();
+    }
+    if (isbn !== undefined) book.isbn = String(isbn).trim();
+    if (author !== undefined) book.author = String(author).trim() || "Unknown Author";
+    if (authors !== undefined) book.authors = Array.isArray(authors) ? authors : [authors];
+    if (category !== undefined) book.category = String(category).trim() || "General";
+    if (publisher !== undefined) book.publisher = String(publisher).trim() || "N/A";
+    if (publicationYear !== undefined) {
+      book.publicationYear = publicationYear === null || publicationYear === "" ? null : Number(publicationYear);
+    }
+    if (shelf !== undefined) book.shelf = String(shelf).trim() || "General Shelf";
+    if (condition !== undefined) book.condition = String(condition).trim() || "Good";
+    if (copies !== undefined) book.copies = Math.max(1, Number(copies) || 1);
+    if (borrowable !== undefined) book.borrowable = Boolean(borrowable);
+    if (status !== undefined) {
+      if (!["available", "borrowed", "maintenance", "reserved"].includes(status)) {
+        return res.status(400).json({ message: "Invalid status value" });
+      }
+      book.status = status;
+      book.available = status === "available";
+    }
+
+    await book.save();
+    res.json({ message: "Book updated successfully", book });
+  } catch (error) {
+    console.error("Error updating book:", error);
+    res.status(500).json({ message: "Failed to update book", error: error.message });
   }
 });
 

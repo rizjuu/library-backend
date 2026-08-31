@@ -5,12 +5,11 @@ const { protect, authorize } = require("../middleware/auth");
 
 const router = express.Router();
 
-// Apply auth middleware to all user management routes - Admin Only
+// Apply auth middleware to all user management routes
 router.use(protect);
-router.use(authorize("admin"));
 
-// GET /api/users - List & Search Patrons / Users
-router.get("/", async (req, res) => {
+// GET /api/users - List & Search Patrons / Users (admin + staff can view)
+router.get("/", authorize("admin", "staff"), async (req, res) => {
   try {
     const { search, role, status } = req.query;
     const query = {};
@@ -68,6 +67,9 @@ router.get("/", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch users", error: error.message });
   }
 });
+
+// All routes below this line are Admin Only
+router.use(authorize("admin"));
 
 // POST /api/users/patron - Admin Add New Patron
 router.post("/patron", async (req, res) => {

@@ -15,6 +15,7 @@ app.use("/api/users", require("./routes/users"));
 app.use("/api/external-books", require("./routes/externalBooks"));
 app.use("/api/announcements", require("./routes/announcements"));
 app.use("/api/dashboard", require("./routes/dashboard"));
+app.use("/api/reports", require("./routes/reports"));
 
 mongoose
   .connect(process.env.MONGO_URI)
