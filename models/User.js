@@ -41,6 +41,18 @@ const userSchema = new mongoose.Schema(
       required: true
     },
 
+    firstName: {
+      type: String,
+      trim: true,
+      default: ""
+    },
+
+    lastName: {
+      type: String,
+      trim: true,
+      default: ""
+    },
+
     phone: {
       type: String,
       trim: true,

@@ -130,6 +130,11 @@ const bookSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null
+    },
+
+    weedingReason: {
+      type: String,
+      default: "Damaged / Outdated / Weeded"
     }
   },
   {

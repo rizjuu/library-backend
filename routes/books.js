@@ -218,30 +218,62 @@ router.get("/archived", protect, authorize("admin"), async (req, res) => {
   }
 });
 
-// Archive a book without deleting its catalog record (admins only)
+// Archive/Weed a book without deleting its catalog record (admins only)
 router.patch("/:id/archive", protect, authorize("admin"), async (req, res) => {
   try {
+    const reason = String(req.body.reason || req.body.weedingReason || "Physical wear / Damaged").trim();
     const book = await Book.findOneAndUpdate(
       { _id: req.params.id, archived: { $ne: true } },
       {
         $set: {
           archived: true,
           archivedAt: new Date(),
-          archivedBy: req.user._id
+          archivedBy: req.user._id,
+          weedingReason: reason
         }
       },
       { new: true }
     );
 
     if (!book) {
-      return res.status(404).json({ message: "Book not found or already archived" });
+      return res.status(404).json({ message: "Book not found or already weeded" });
     }
 
-    res.json({ message: "Book archived successfully", book });
+    res.json({ message: "Book weeded successfully", book });
   } catch (error) {
-    console.error("Error archiving book:", error);
-    res.status(500).json({ message: "Failed to archive book" });
+    console.error("Error weeding book:", error);
+    res.status(500).json({ message: "Failed to weed book" });
   }
 });
+
+// Restore a weeded book back to the active catalog (admins only)
+const restoreHandler = async (req, res) => {
+  try {
+    const book = await Book.findOneAndUpdate(
+      { _id: req.params.id, archived: true },
+      {
+        $set: {
+          archived: false,
+          archivedAt: null,
+          archivedBy: null,
+          weedingReason: null
+        }
+      },
+      { new: true }
+    );
+
+    if (!book) {
+      return res.status(404).json({ message: "Book not found or not in weeded records" });
+    }
+
+    res.json({ message: "Book restored to active catalog successfully", book });
+  } catch (error) {
+    console.error("Error restoring book:", error);
+    res.status(500).json({ message: "Failed to restore book" });
+  }
+};
+
+router.patch("/:id/restore", protect, authorize("admin"), restoreHandler);
+router.patch("/:id/unarchive", protect, authorize("admin"), restoreHandler);
 
 module.exports = router;

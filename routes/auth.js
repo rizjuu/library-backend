@@ -206,16 +206,27 @@ router.post("/google-login", async (req, res) => {
 // ================================
 router.get("/me", protect, async (req, res) => {
   try {
+    const user = req.user;
+    let firstName = user.firstName || "";
+    let lastName = user.lastName || "";
+    if (!firstName && !lastName && user.name) {
+      const parts = user.name.trim().split(/\s+/);
+      firstName = parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0];
+      lastName = parts.length > 1 ? parts[parts.length - 1] : "";
+    }
+
     res.json({
       user: {
-        id: req.user._id,
-        username: req.user.username,
-        email: req.user.email,
-        role: req.user.role,
-        name: req.user.name,
-        phone: req.user.phone,
-        avatar: req.user.avatar,
-        status: req.user.status
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        name: user.name,
+        firstName,
+        lastName,
+        phone: user.phone,
+        avatar: user.avatar,
+        status: user.status
       }
     });
   } catch (error) {
@@ -228,10 +239,18 @@ router.get("/me", protect, async (req, res) => {
 // ================================
 router.patch("/me", protect, async (req, res) => {
   try {
-    const { name, email, phone } = req.body;
+    let { name, firstName, lastName, email, phone } = req.body;
+
+    if (!name && (firstName || lastName)) {
+      name = `${firstName || ""} ${lastName || ""}`.trim();
+    } else if (name && (!firstName && !lastName)) {
+      const parts = name.trim().split(/\s+/);
+      firstName = parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0];
+      lastName = parts.length > 1 ? parts[parts.length - 1] : "";
+    }
 
     if (!name || !name.trim()) {
-      return res.status(400).json({ message: "Name is required" });
+      return res.status(400).json({ message: "First name and last name are required" });
     }
     if (email !== undefined && (!email.trim() || !email.includes("@"))) {
       return res.status(400).json({ message: "A valid email address is required" });
@@ -245,6 +264,8 @@ router.patch("/me", protect, async (req, res) => {
     }
 
     user.name = name.trim();
+    if (firstName !== undefined) user.firstName = String(firstName).trim();
+    if (lastName !== undefined) user.lastName = String(lastName).trim();
     user.email = cleanEmail;
     if (phone !== undefined) user.phone = phone.trim();
     await user.save();
@@ -257,6 +278,8 @@ router.patch("/me", protect, async (req, res) => {
         email: user.email,
         role: user.role,
         name: user.name,
+        firstName: user.firstName || (user.name.split(/\s+/).length > 1 ? user.name.split(/\s+/).slice(0, -1).join(" ") : user.name),
+        lastName: user.lastName || (user.name.split(/\s+/).length > 1 ? user.name.split(/\s+/).pop() : ""),
         phone: user.phone,
         avatar: user.avatar,
         status: user.status
