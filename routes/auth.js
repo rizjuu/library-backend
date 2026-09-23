@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
 const User = require("../models/User");
-const { sendSignInNotificationEmail } = require("../utils/email");
+const { sendSignInNotificationEmail, sendPasswordResetEmail } = require("../utils/email");
 const { protect } = require("../middleware/auth");
 
 const router = express.Router();
@@ -16,7 +16,7 @@ router.get("/test", (req, res) => {
 });
 
 // ================================
-// ADMIN / STAFF LOGIN
+// UNIFIED LOGIN (Admin, Staff, or Patron)
 // ================================
 router.post("/login", async (req, res) => {
   try {
@@ -25,13 +25,16 @@ router.post("/login", async (req, res) => {
 
     if (!username || !password) {
       return res.status(400).json({
-        message: "Username and password are required"
+        message: "Username/email and password are required"
       });
     }
 
-    const cleanUsername = username.trim().toLowerCase();
+    const cleanIdentifier = username.trim().toLowerCase();
     const user = await User.findOne({
-      username: cleanUsername
+      $or: [
+        { username: cleanIdentifier },
+        { email: cleanIdentifier }
+      ]
     });
 
     if (!user) {
@@ -46,17 +49,16 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    if (!user.password) {
+      return res.status(401).json({
+        message: "No password set for this account. Please use Google sign-in or contact the administrator."
+      });
+    }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
       return res.status(401).json({
         message: "Invalid username or password"
-      });
-    }
-
-    if (user.role !== "admin" && user.role !== "staff") {
-      return res.status(403).json({
-        message: "Please use the Patron login option"
       });
     }
 
@@ -70,6 +72,7 @@ router.post("/login", async (req, res) => {
       {
         id: user._id,
         username: user.username,
+        email: user.email,
         role: user.role,
         name: user.name
       },
@@ -83,14 +86,152 @@ router.post("/login", async (req, res) => {
       user: {
         id: user._id,
         username: user.username,
+        email: user.email,
         role: user.role,
-        name: user.name
+        name: user.name,
+        avatar: user.avatar
       }
     });
   } catch (error) {
     console.error("LOGIN ERROR:", error);
     res.status(500).json({
       message: "Server error",
+      error: error.message
+    });
+  }
+});
+
+// ================================
+// FORGOT PASSWORD - REQUEST RESET CODE
+// ================================
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { identifier } = req.body;
+
+    if (!identifier || !identifier.trim()) {
+      return res.status(400).json({
+        message: "Please enter your username or registered email address"
+      });
+    }
+
+    const clean = identifier.trim().toLowerCase();
+    const user = await User.findOne({
+      $or: [
+        { username: clean },
+        { email: clean }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "No account found matching that username or email address"
+      });
+    }
+
+    if (user.status === "disabled") {
+      return res.status(403).json({
+        message: "This account has been disabled. Please contact library administration."
+      });
+    }
+
+    // Generate 6-digit verification code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    user.resetPasswordCode = resetCode;
+    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+    await user.save();
+
+    // If user has an email address, send it
+    if (user.email && user.email.includes("@")) {
+      await sendPasswordResetEmail(user.email, user.name, resetCode);
+      const maskedEmail = user.email.replace(/^(.)(.*)(@.*)$/, (_, a, b, c) => `${a}${"*".repeat(Math.max(1, b.length - 1))}${b.slice(-1)}${c}`);
+
+      return res.json({
+        message: `A 6-digit verification code has been sent to ${maskedEmail}`,
+        emailSent: true,
+        maskedEmail
+      });
+    } else {
+      console.log(`[Forgot Password] User ${user.username} has no email. Reset code: ${resetCode}`);
+      return res.json({
+        message: "A verification code has been generated for your account.",
+        emailSent: false,
+        devCode: resetCode
+      });
+    }
+  } catch (error) {
+    console.error("FORGOT PASSWORD ERROR:", error);
+    res.status(500).json({
+      message: "An error occurred while processing your request",
+      error: error.message
+    });
+  }
+});
+
+// ================================
+// RESET PASSWORD - VERIFY & UPDATE
+// ================================
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { identifier, code, newPassword } = req.body;
+
+    if (!identifier || !code || !newPassword) {
+      return res.status(400).json({
+        message: "Username/email, verification code, and new password are required"
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters long"
+      });
+    }
+
+    const clean = identifier.trim().toLowerCase();
+    const user = await User.findOne({
+      $or: [
+        { username: clean },
+        { email: clean }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "No account found matching that username or email address"
+      });
+    }
+
+    if (!user.resetPasswordCode || !user.resetPasswordExpires) {
+      return res.status(400).json({
+        message: "No password reset code requested for this account"
+      });
+    }
+
+    if (new Date() > new Date(user.resetPasswordExpires)) {
+      return res.status(400).json({
+        message: "The verification code has expired. Please request a new one."
+      });
+    }
+
+    if (user.resetPasswordCode.trim() !== String(code).trim()) {
+      return res.status(400).json({
+        message: "Invalid verification code. Please check and try again."
+      });
+    }
+
+    // Hash new password and clear reset fields
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.resetPasswordCode = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({
+      message: "Your password has been successfully reset! You can now log in."
+    });
+  } catch (error) {
+    console.error("RESET PASSWORD ERROR:", error);
+    res.status(500).json({
+      message: "Failed to reset password",
       error: error.message
     });
   }

@@ -183,4 +183,67 @@ async function sendOverdueReminderEmail(recipientEmail, userName, overdueLoans =
   }
 }
 
-module.exports = { sendSignInNotificationEmail, sendOverdueReminderEmail };
+async function sendPasswordResetEmail(recipientEmail, userName, resetCode) {
+  const user = (process.env.SMTP_USER || process.env.GMAIL_USER || "").trim();
+
+  const fromAddress = user
+    ? `"Misamis Oriental Public Library" <${user}>`
+    : (process.env.SMTP_FROM || '"Misamis Oriental Public Library" <noreply@mopl.gov.ph>');
+
+  const mailOptions = {
+    from: fromAddress,
+    to: recipientEmail,
+    subject: "Your Password Reset Code - Misamis Oriental Public Library",
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e0e0e0; border-radius: 10px; background-color: #ffffff;">
+        <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #6F4E37;">
+          <h2 style="color: #4B3832; margin: 0;">📚 Misamis Oriental Public Library</h2>
+          <p style="color: #8C7768; margin: 6px 0 0 0; font-size: 13.5px;">Account Security &amp; Password Recovery</p>
+        </div>
+
+        <div style="padding: 24px 8px; color: #334155;">
+          <h3 style="color: #4B3832; margin-top: 0;">Password Reset Request</h3>
+          <p>Hello <strong>${userName || "User"}</strong>,</p>
+          <p>We received a request to reset the password for your library account. Use the verification code below to complete your reset:</p>
+
+          <div style="background-color: #FAF7F2; border: 2px dashed #DCC7AA; padding: 18px; margin: 20px 0; text-align: center; border-radius: 8px;">
+            <span style="font-family: 'Courier New', monospace; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #4B3832;">
+              ${resetCode}
+            </span>
+          </div>
+
+          <p style="font-size: 13px; color: #64748b;">
+            ⏱️ This verification code is valid for <strong>15 minutes</strong>. If you did not request a password reset, please ignore this email or contact library administration immediately.
+          </p>
+        </div>
+
+        <div style="border-top: 1px solid #e2e8f0; padding-top: 15px; text-align: center; font-size: 12px; color: #94a3b8;">
+          © 2026 Misamis Oriental Provincial Capitol Public Library · All rights reserved.
+        </div>
+      </div>
+    `
+  };
+
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.warn(`[Email] No SMTP credentials configured. Reset code for ${recipientEmail}: ${resetCode}`);
+    return { success: false, reason: "NO_SMTP" };
+  }
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[Email] Password reset code sent to ${recipientEmail}. Message ID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("[Email Reset Dispatch Error]:", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+module.exports = {
+  sendSignInNotificationEmail,
+  sendOverdueReminderEmail,
+  sendPasswordResetEmail
+};
+

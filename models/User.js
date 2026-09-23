@@ -63,6 +63,14 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["active", "disabled"],
       default: "active"
+    },
+
+    resetPasswordCode: {
+      type: String
+    },
+
+    resetPasswordExpires: {
+      type: Date
     }
   },
   {
